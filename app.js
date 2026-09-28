@@ -13,10 +13,11 @@ const DEFAULTS = {
   cols: 60, rows: 60, lockAspect: true,
   shape: 'circle', sizeMm: 2.5, gapMm: 0.3, stagger: false,
   paletteMode: 'auto', nColors: 12, dither: false, minCount: 0,
-  customPalette: '#000000\n#FFFFFF\n#FF0000\n#FFD700\n#00C2CB\n#FF00FF\n#1E3A8A\n#16A34A\n#8B4513\n#9CA3AF',
+  customPalette: '#000000 Black\n#FFFFFF White\n#FF0000 Red\n#FFD700 Yellow\n#00C2CB Teal\n#FF00FF Magenta\n#1E3A8A Navy\n#16A34A Green\n#8B4513 Brown\n#9CA3AF Grey',
   brightness: 0, contrast: 0, saturation: 0, knockout: false, knockTol: 14,
   includeBase: true, baseMm: 1.2, heightMm: 1.0, marginMm: 3, plateColor: '#F5F5DC',
-  kitFloor: 1.2, kitDepth: 1.2, kitClear: 0.2, kitPieceH: 2.0, kitGuides: true, kitGuideH: 0.4,
+  kitHole: 'through', kitThick: 1.6, kitPieceMode: 'exact',
+  kitFloor: 1.2, kitDepth: 1.2, kitClear: 0.2, kitPieceH: 2.0, kitGuides: false, kitGuideH: 0.4,
   kitPocketEmpty: false, kitSpare: 5, kitMargin: 5, kitBed: 250,
   outline: false, gridLines: false, symbols: false,
   view: 'preview', tool: 'view', zoom: 1,
@@ -26,7 +27,11 @@ const COMPUTE_KEYS = new Set(['cols', 'rows', 'lockAspect', 'paletteMode', 'nCol
   'customPalette', 'brightness', 'contrast', 'saturation', 'knockout', 'knockTol']);
 
 const S = Object.assign({}, DEFAULTS);
-try { Object.assign(S, JSON.parse(localStorage.getItem('mixelpixel.settings') || '{}')); } catch (e) {}
+try {
+  const saved = JSON.parse(localStorage.getItem('mixelpixel.settings') || '{}');
+  if (!saved.kitV) { delete saved.kitGuides; } // v2: through holes + single-color plate became the default
+  Object.assign(S, saved); S.kitV = 2;
+} catch (e) {}
 S.tool = 'view'; S.zoom = 1;
 const save = () => { try { const { tool, zoom, ...keep } = S; localStorage.setItem('mixelpixel.settings', JSON.stringify(keep)); } catch (e) {} };
 
@@ -205,7 +210,14 @@ function compute() {
   sortPalette();
 }
 
-function parseCustom(txt) { return (txt || '').split(/[\s,;]+/).map(parseHex).filter(Boolean); }
+function parseCustom(txt) { // "#FF0000 Red PLA" per line (or comma separated); the name is optional
+  const out = [], re = /#?\b([0-9a-f]{6}|[0-9a-f]{3})\b[ \t]*([^#,;\n]*)/gi; let m;
+  while ((m = re.exec(txt || ''))) { const c = parseHex(m[1]); if (c) { const name = m[2].trim(); if (name) c.name = name; out.push(c); } }
+  return out;
+}
+const colorName = j => GRID.palette[j].name || hex(GRID.palette[j]);
+const slug = t => t.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
+const fileTag = j => `${String(j + 1).padStart(2, '0')}_${GRID.palette[j].name ? slug(GRID.palette[j].name) + '_' : ''}${hex(GRID.palette[j]).slice(1)}`;
 
 function counts() { const c = new Array(GRID.palette.length).fill(0); GRID.idx.forEach(j => { if (j >= 0) c[j]++; }); return c; }
 
@@ -345,7 +357,7 @@ function drawBoard(g, W, H, P, pad) {
     const j = idx[r * cols + c]; if (j < 0 && !S.kitPocketEmpty) continue;
     const [ux, uy] = cellCenter(c, r), x = pad + m + ux * P, y = pad + m + uy * P;
     g.beginPath(); g.moveTo(x + pts[0][0] * s, y + pts[0][1] * s); for (let k = 1; k < pts.length; k++) g.lineTo(x + pts[k][0] * s, y + pts[k][1] * s); g.closePath();
-    g.fillStyle = S.kitGuides && j >= 0 ? hex(pal[j]) : 'rgba(0,0,0,.18)'; g.fill(); g.stroke();
+    g.fillStyle = K.through ? '#2a2a24' : K.G && j >= 0 ? hex(pal[j]) : 'rgba(0,0,0,.18)'; g.fill(); g.stroke();
   }
 }
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
@@ -460,8 +472,8 @@ function renderLegend() {
   body.innerHTML = GRID.palette.map((p, j) => `<tr data-j="${j}" class="${j === selected ? 'sel' : ''}">
     <td><span class="sym" style="background:${hex(p)};color:${luma(p) > 140 ? '#000' : '#fff'}">${symOf(j)}</span></td>
     <td><button class="sw" type="button" data-recolor="${j}" style="background:${hex(p)}" aria-label="Change color ${hex(p)}"></button></td>
-    <td>${hex(p)}</td><td class="r">${c[j].toLocaleString()}</td><td class="r">${(c[j] / t * 100).toFixed(1)}</td>
-    <td class="r"><button class="xbtn" type="button" data-merge="${j}" aria-label="Merge ${hex(p)} into nearest color" title="Merge into nearest color">✕</button></td></tr>`).join('');
+    <td>${p.name ? `<b>${p.name.replace(/</g, '&lt;')}</b><br>` : ''}${hex(p)}</td><td class="r">${c[j].toLocaleString()}</td><td class="r">${(c[j] / t * 100).toFixed(1)}</td>
+    <td class="r"><button class="xbtn" type="button" data-dl="${j}" aria-label="Download ${hex(p)} pieces STL" title="Download this color's pieces (STL)">↓</button> <button class="xbtn" type="button" data-merge="${j}" aria-label="Merge ${hex(p)} into nearest color" title="Merge into nearest color">✕</button></td></tr>`).join('');
 }
 
 /* ================= controls ================= */
@@ -477,6 +489,10 @@ function syncControls() {
   $$('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === S.tool));
   $$('.shape').forEach(b => b.setAttribute('aria-checked', b.dataset.shape === S.shape));
   $('#customWrap').hidden = S.paletteMode !== 'custom';
+  $$('[data-hole]').forEach(b => b.setAttribute('aria-selected', b.dataset.hole === S.kitHole));
+  $$('[data-pmode]').forEach(b => b.setAttribute('aria-selected', b.dataset.pmode === S.kitPieceMode));
+  $$('.pocket-only').forEach(el => el.hidden = S.kitHole === 'through');
+  $$('.through-only').forEach(el => el.hidden = S.kitHole !== 'through');
   $('#nColors').max = S.paletteMode === 'custom' ? Math.max(2, parseCustom(S.customPalette).length) : 48;
   $('#zoomVal').textContent = Math.round(S.zoom * 100) + '%';
   $('#stage').classList.toggle('paint', S.tool !== 'view');
@@ -485,7 +501,7 @@ function syncControls() {
 const aspect = () => IMG ? (IMG.naturalHeight || IMG.height) / (IMG.naturalWidth || IMG.width) : 1;
 function setKey(k, v) {
   if (['cols', 'rows', 'nColors', 'minCount', 'brightness', 'contrast', 'saturation', 'knockTol'].includes(k)) v = Math.round(+v || 0);
-  if (['sizeMm', 'gapMm', 'baseMm', 'heightMm', 'marginMm', 'kitFloor', 'kitDepth', 'kitClear', 'kitPieceH', 'kitGuideH', 'kitMargin', 'kitBed', 'kitSpare'].includes(k)) v = Math.max(0, +v || 0);
+  if (['sizeMm', 'gapMm', 'baseMm', 'heightMm', 'marginMm', 'kitFloor', 'kitDepth', 'kitClear', 'kitPieceH', 'kitGuideH', 'kitThick', 'kitMargin', 'kitBed', 'kitSpare'].includes(k)) v = Math.max(0, +v || 0);
   if (k === 'kitBed') v = clamp(v, 60, 1000);
   if (k === 'cols') { v = clamp(v, 4, 300); if (S.lockAspect) S.rows = clamp(Math.round(v * aspect()), 4, 300); }
   if (k === 'rows') { v = clamp(v, 4, 300); if (S.lockAspect) S.cols = clamp(Math.round(v / aspect()), 4, 300); }
@@ -522,6 +538,8 @@ function bind() {
     toast('ok', 'Fitted', `${S.cols} columns × ${pitch().toFixed(2)} mm pitch.`);
   });
   $$('[data-pm]').forEach(b => b.addEventListener('click', () => setKey('paletteMode', b.dataset.pm)));
+  $$('[data-hole]').forEach(b => b.addEventListener('click', () => setKey('kitHole', b.dataset.hole)));
+  $$('[data-pmode]').forEach(b => b.addEventListener('click', () => setKey('kitPieceMode', b.dataset.pmode)));
   $$('[data-view]').forEach(b => b.addEventListener('click', () => { S.view = b.dataset.view; S.zoom = 1; save(); syncControls(); render(); }));
   $$('[data-tool]').forEach(b => b.addEventListener('click', () => { S.tool = b.dataset.tool; syncControls(); if (S.tool !== 'view' && S.view === 'original') { S.view = 'preview'; syncControls(); render(); } }));
   $('#zoomIn').addEventListener('click', () => zoomBy(1.25));
@@ -555,12 +573,14 @@ function bind() {
 
   // legend
   $('#legendBody').addEventListener('click', e => {
+    const dl = e.target.closest('[data-dl]');
+    if (dl) { exportColorPieces(+dl.dataset.dl); return; }
     const m = e.target.closest('[data-merge]'), rc = e.target.closest('[data-recolor]'), tr = e.target.closest('tr[data-j]');
     if (m) { const j = +m.dataset.merge, h = hex(GRID.palette[j]); if (removeColor(j)) { sortPalette(); edited = true; render(); renderLegend(); toast('ok', 'Merged', `${h} folded into its nearest color.`); } else toast('warn', 'Last color', 'A pattern needs at least one color.'); return; }
     if (rc) { const j = +rc.dataset.recolor, inp = $('#recolor'); inp.value = hex(GRID.palette[j]).toLowerCase(); inp.dataset.j = j; inp.click(); }
     if (tr) { selected = +tr.dataset.j; renderLegend(); if (S.tool === 'view') { S.tool = 'paint'; syncControls(); } }
   });
-  $('#recolor').addEventListener('input', e => { const j = +e.target.dataset.j, c = parseHex(e.target.value); if (c && GRID?.palette[j]) { GRID.palette[j] = c; render(); renderLegend(); } });
+  $('#recolor').addEventListener('input', e => { const j = +e.target.dataset.j, c = parseHex(e.target.value); if (c && GRID?.palette[j]) { if (GRID.palette[j].name) c.name = GRID.palette[j].name; GRID.palette[j] = c; render(); renderLegend(); } });
 
   // canvas interaction
   let down = false;
@@ -651,9 +671,9 @@ function doExport(kind) {
       const c = counts(), rows = [['symbol', 'hex', 'r', 'g', 'b', 'pieces']].concat(GRID.palette.map((p, j) => [symOf(j), hex(p), p.r, p.g, p.b, c[j]]));
       download(new Blob(['﻿' + rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' }), baseName() + '_colors.csv');
     } else if (kind === 'stl') exportSTL();
-    else if (kind === 'kitplate') exportKit(false);
-    else if (kind === 'kit') exportKit(true);
-    if (!['stl', 'kit', 'kitplate'].includes(kind)) toast('ok', 'Exported', kind.toUpperCase() + ' downloaded.');
+    else if (kind.startsWith('kit:')) exportKit(kind.slice(4));
+    if (kind === 'stl' || kind.startsWith('kit:')) return;
+    toast('ok', 'Exported', kind.toUpperCase() + ' downloaded.');
   } catch (e) { console.error(e); toast('err', 'Export failed', e.message); }
 }
 
@@ -783,8 +803,9 @@ function prism(m, poly, tris, z0, z1) {
 function unitShape(seg = 20) { const p = polyOf(S.shape, seg); if (area2(p) < 0) p.reverse(); return { poly: p, tris: earClip(p) }; }
 
 function kitGeom() {
-  const p = pitch(), want = S.sizeMm + S.kitClear, pocket = Math.min(want, p - 0.4), G = S.kitGuides ? S.kitGuideH : 0;
-  return { p, pocket, wall: p - pocket, limited: want > p - 0.4, F: S.kitFloor, G, H: S.kitFloor + G + S.kitDepth };
+  const p = pitch(), want = S.sizeMm + S.kitClear, pocket = Math.min(want, p - 0.4), through = S.kitHole === 'through';
+  const G = !through && S.kitGuides ? S.kitGuideH : 0;
+  return { p, pocket, wall: p - pocket, limited: want > p - 0.4, through, F: through ? 0 : S.kitFloor, G, H: through ? S.kitThick : S.kitFloor + G + S.kitDepth };
 }
 function kitTiles() { // split along cell lines so each plate fits the printer bed
   const { p } = kitGeom(), m = S.kitMargin, cols = GRID.cols, rows = GRID.rows;
@@ -820,6 +841,7 @@ function buildBoardTile(t) {
     const map = q => P(cu + q[0], cv + q[1]);
     if (j < 0 && !S.kitPocketEmpty) { add(tpl.full.map(map), tpl.fullTris, K.H); continue; }
     add(tpl.ring.map(map), tpl.ringTris, K.H);
+    if (K.through) continue; // hole edges are left open → the outline pass walls them in
     const hole = tpl.hole.map(map);
     add(hole, tpl.holeTris, K.F);
     walls(plate, hole, K.F, K.H, true);
@@ -852,8 +874,9 @@ function buildBoardTile(t) {
 }
 
 function kitPieceCounts() { const c = counts(); return c.map(n => n ? Math.ceil(n * (1 + S.kitSpare / 100)) : 0); }
+function sheetLayout() { const sp = S.sizeMm + 1.5, per = Math.max(1, Math.floor((S.kitBed - 10) / sp)); return { sp, per, sheet: per * per }; }
 function buildPieces(n) { // n loose pieces packed on bed-sized sheets → array of Mesh
-  const { poly, tris } = unitShape(), s = S.sizeMm, sp = s + 1.5, per = Math.max(1, Math.floor((S.kitBed - 10) / sp)), sheet = per * per, out = [];
+  const { poly, tris } = unitShape(), s = S.sizeMm, { sp, per, sheet } = sheetLayout(), out = [];
   for (let i = 0; i < n; i++) {
     if (i % sheet === 0) out.push(new Mesh());
     const k = i % sheet, x = 5 + (k % per + 0.5) * sp, y = 5 + (Math.floor(k / per) + 0.5) * sp;
@@ -861,56 +884,111 @@ function buildPieces(n) { // n loose pieces packed on bed-sized sheets → array
   }
   return out;
 }
+// Pieces to PRINT per color: exact (design + spares) or one full bed sheet for stock
+function printCounts() { const pc = kitPieceCounts(); return S.kitPieceMode === 'sheet' ? pc.map(n => n ? sheetLayout().sheet : 0) : pc; }
+function pieceFiles(j, n) {
+  const sheets = buildPieces(n), dir = `${fileTag(j)}_x${n}/`;
+  return sheets.map((m, k) => ({ name: dir + `pieces_${hex(GRID.palette[j]).slice(1)}${sheets.length > 1 ? `_sheet${k + 1}of${sheets.length}` : ''}.stl`, data: m.stl() }));
+}
 
 function kitInfoHTML() {
   if (!GRID) return 'Upload an image to size the board.';
   const K = kitGeom(), tiles = kitTiles(), d = tileDims(tiles[0]), pc = kitPieceCounts();
-  let h = `Board: <b>${tiles.length === 1 ? `${d.W.toFixed(1)} × ${d.H.toFixed(1)}` : `${tiles.length} plates (${tiles[0].nx}×${tiles[0].ny})`}</b> × ${K.H.toFixed(1)} mm · pocket ${K.pocket.toFixed(2)} mm · wall ${K.wall.toFixed(2)} mm<br>Kit: <b>${total(pc).toLocaleString()}</b> loose pieces incl. ${S.kitSpare}% spare`;
+  let h = `Board: <b>${tiles.length === 1 ? `${d.W.toFixed(1)} × ${d.H.toFixed(1)}` : `${tiles.length} plates (${tiles[0].nx}×${tiles[0].ny})`}</b> × ${K.H.toFixed(1)} mm · ${K.through ? 'hole' : 'pocket'} ${K.pocket.toFixed(2)} mm · wall ${K.wall.toFixed(2)} mm`;
+  h += `<br>Package: <b>${total(pc).toLocaleString()}</b> pieces in ${pc.filter(Boolean).length} colors (incl. ${S.kitSpare}% spare)`;
+  if (S.kitPieceMode === 'sheet') h += `<br>Printing: one full sheet of <b>${sheetLayout().sheet}</b> per color`;
   if (K.wall < 0.8) h += `<br>⚠ Walls under 0.8 mm print poorly — raise Gap to ≥ ${(S.kitClear + 0.8).toFixed(1)} mm.`;
-  if (K.limited) h += `<br>⚠ Pocket shrunk to keep a 0.4 mm wall; pieces may not fit.`;
+  if (K.limited) h += `<br>⚠ Hole shrunk to keep a 0.4 mm wall; pieces may not fit.`;
   if (S.stagger && (d.W > S.kitBed || d.H > S.kitBed)) h += `<br>⚠ Honeycomb boards can't be split — bigger than the bed.`;
-  if (S.kitPieceH <= S.kitDepth) h += `<br>⚠ Pieces are no taller than the pocket — they'll be hard to see and remove.`;
+  if (K.through && S.kitPieceH < S.kitThick) h += `<br>⚠ Pieces are shorter than the plate — they'll sit below the surface.`;
+  if (!K.through && S.kitPieceH <= S.kitDepth) h += `<br>⚠ Pieces are no taller than the pocket — hard to see and remove.`;
+  if (S.kitPieceMode === 'sheet' && Math.max(...pc) > sheetLayout().sheet) h += `<br>⚠ Some colors need more than one sheet for this design.`;
   return h;
 }
 
-function exportKit(full) {
-  const tiles = kitTiles(), pc = kitPieceCounts(), K = kitGeom();
-  toast('info', full ? 'Building kit' : 'Building base plate', `${GRID.cols}×${GRID.rows} pockets…`);
+const canvasPNG = c => { const b = atob(c.toDataURL('image/png').split(',')[1]), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+function chartCanvas() {
+  const P = clamp(Math.floor(7000 / Math.max(GRID.cols, GRID.rows)), 10, 28), gut = 36, W = gut * 2 + GRID.cols * P, c = document.createElement('canvas');
+  c.width = W; c.height = gut * 2 + GRID.rows * P + legendHeight(W - gut * 2) + 10; drawChart(c.getContext('2d'), P, gut, true); return c;
+}
+// One page to pack an order from: every color, how many pieces go in the bag, a tick box
+function packingCanvas() {
+  const pal = GRID.palette, cnt = counts(), pc = kitPieceCounts(), K = kitGeom(), tiles = kitTiles(), d = tileDims(tiles[0]);
+  const rows = pal.map((p, j) => j).filter(j => cnt[j]), W = 1240, top = 250, rh = 62, c = document.createElement('canvas');
+  c.width = W; c.height = top + rows.length * rh + 190; const g = c.getContext('2d');
+  g.fillStyle = '#F5F5DC'; g.fillRect(0, 0, W, c.height);
+  g.fillStyle = '#000'; g.font = '900 64px Archivo, sans-serif'; g.textBaseline = 'alphabetic'; g.fillText('PACKING LIST', 60, 110);
+  g.font = '700 22px "Space Mono", monospace';
+  g.fillText(`${GRID.cols}×${GRID.rows} ${S.shape} · ${S.sizeMm} mm pieces · ${pal.length} colors`, 60, 152);
+  g.fillText(`Board ${tiles.length > 1 ? tiles.length + ' plates' : d.W.toFixed(0) + '×' + d.H.toFixed(0) + ' mm'} · ${K.through ? 'through holes' : 'pockets'} · spares ${S.kitSpare}%`, 60, 184);
+  const cols = [60, 120, 200, 640, 820, 1010];
+  g.fillRect(40, top - 46, W - 80, 40); g.fillStyle = '#fff'; g.font = '900 18px Archivo, sans-serif';
+  ['✓', 'SYM', 'COLOR', 'HEX', 'IN DESIGN', 'PACK'].forEach((t, i) => g.fillText(t, cols[i], top - 19));
+  rows.forEach((j, i) => {
+    const p = pal[j], y = top + i * rh;
+    g.fillStyle = i % 2 ? '#fff' : '#fbfbef'; g.fillRect(40, y, W - 80, rh);
+    g.strokeStyle = '#000'; g.lineWidth = 3; g.strokeRect(cols[0], y + 15, 32, 32);
+    g.fillStyle = hex(p); g.fillRect(cols[1], y + 11, 56, 40); g.strokeRect(cols[1], y + 11, 56, 40);
+    g.fillStyle = luma(p) > 140 ? '#000' : '#fff'; g.font = '700 22px "Space Mono", monospace'; g.textAlign = 'center'; g.fillText(symOf(j), cols[1] + 28, y + 39); g.textAlign = 'left';
+    g.fillStyle = '#000'; g.font = '900 24px Archivo, sans-serif'; g.fillText((p.name || `Color ${j + 1}`).slice(0, 28), cols[2], y + 40);
+    g.font = '700 22px "Space Mono", monospace'; g.fillText(hex(p), cols[3], y + 40); g.fillText(cnt[j].toLocaleString(), cols[4], y + 40);
+    g.font = '900 30px Archivo, sans-serif'; g.fillText(pc[j].toLocaleString(), cols[5], y + 42);
+    g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(40, y + rh); g.lineTo(W - 40, y + rh); g.stroke();
+  });
+  const y = top + rows.length * rh + 20; g.lineWidth = 4; g.strokeRect(40, top - 46, W - 80, rows.length * rh + 46);
+  g.fillStyle = '#FFD700'; g.fillRect(40, y + 10, W - 80, 64); g.strokeRect(40, y + 10, W - 80, 64);
+  g.fillStyle = '#000'; g.font = '900 28px Archivo, sans-serif';
+  g.fillText(`TOTAL  ${total(pc).toLocaleString()} PIECES  +  ${tiles.length} BASE PLATE${tiles.length > 1 ? 'S' : ''}  +  CHART`, 60, y + 53);
+  g.font = '700 18px "Space Mono", monospace'; g.fillText('Tick each color as it goes in the bag.', 60, y + 120);
+  return c;
+}
+
+function exportColorPieces(j) {
+  if (!GRID) return; const n = printCounts()[j] || kitPieceCounts()[j];
+  if (!n) return toast('warn', 'No pieces', 'This color is not used.');
+  const f = pieceFiles(j, n);
+  if (f.length === 1) download(new Blob([f[0].data], { type: 'model/stl' }), `${fileTag(j)}_x${n}.stl`); else download(zip(f), `${fileTag(j)}_x${n}.zip`);
+  toast('ok', colorName(j), `${n} pieces${f.length > 1 ? ` on ${f.length} sheets` : ''}.`);
+}
+
+// what: 'plate' | 'pieces' | 'packing' | 'kit'
+function exportKit(what) {
+  const tiles = kitTiles(), K = kitGeom(), pc = kitPieceCounts(), pr = printCounts();
+  if (what === 'packing') { packingCanvas().toBlob(b => download(b, baseName() + '_packing_list.png')); return toast('ok', 'Packing list', 'PNG downloaded.'); }
+  toast('info', 'Building ' + (what === 'plate' ? 'base plate' : what === 'pieces' ? 'pieces' : 'kit'), 'One moment…');
   setTimeout(() => {
     try {
-      const files = [], multi = tiles.length > 1;
-      tiles.forEach(t => {
-        const b = buildBoardTile(t), dir = multi ? `plate_r${t.ty + 1}c${t.tx + 1}/` : '';
-        files.push({ name: (full ? 'board/' : '') + dir + (multi ? `plate_r${t.ty + 1}c${t.tx + 1}.stl` : 'base_plate.stl'), data: b.plate.stl() });
-        if (full) b.guides.forEach((g, j) => { if (g) files.push({ name: `board/${dir}guide_${String(j + 1).padStart(2, '0')}_${symName(j)}_${hex(GRID.palette[j]).slice(1)}.stl`, data: g.stl() }); });
+      const files = [], multi = tiles.length > 1, withPlate = what !== 'pieces', withPieces = what !== 'plate';
+      if (withPlate) tiles.forEach(t => {
+        const b = buildBoardTile(t), nm = multi ? `plate_r${t.ty + 1}c${t.tx + 1}` : 'base_plate', dir = what === 'kit' ? '00_base_plate/' : '';
+        files.push({ name: dir + nm + '.stl', data: b.plate.stl() });
+        b.guides.forEach((g, j) => { if (g) files.push({ name: `${dir}${nm}_guide_${fileTag(j)}.stl`, data: g.stl() }); });
       });
-      if (!full && files.length === 1) {
+      if (what === 'plate' && files.length === 1) {
         download(new Blob([files[0].data], { type: 'model/stl' }), baseName() + '_base_plate.stl');
         return toast('ok', 'Base plate ready', `${(files[0].data.length / 1e6).toFixed(1)} MB STL`);
       }
-      if (full) {
-        GRID.palette.forEach((p, j) => {
-          if (!pc[j]) return; const sheets = buildPieces(pc[j]);
-          sheets.forEach((m, k) => files.push({ name: `pieces/${String(j + 1).padStart(2, '0')}_${symName(j)}_${hex(p).slice(1)}_x${pc[j]}${sheets.length > 1 ? `_sheet${k + 1}of${sheets.length}` : ''}.stl`, data: m.stl() }));
-        });
-        const P = clamp(Math.floor(7000 / Math.max(GRID.cols, GRID.rows)), 10, 28), gut = 36, W = gut * 2 + GRID.cols * P, c = document.createElement('canvas');
-        c.width = W; c.height = gut * 2 + GRID.rows * P + legendHeight(W - gut * 2) + 10; drawChart(c.getContext('2d'), P, gut, true);
-        const png = atob(c.toDataURL('image/png').split(',')[1]), bytes = new Uint8Array(png.length); for (let i = 0; i < png.length; i++) bytes[i] = png.charCodeAt(i);
-        files.push({ name: 'chart.png', data: bytes });
+      if (withPieces) GRID.palette.forEach((p, j) => { if (pr[j]) files.push(...pieceFiles(j, pr[j])); });
+      if (what === 'kit') {
+        files.push({ name: 'packing_list.png', data: canvasPNG(packingCanvas()) });
+        files.push({ name: 'chart.png', data: canvasPNG(chartCanvas()) });
       }
       const cnt = counts();
       files.push({ name: 'README.txt', data: new TextEncoder().encode([
         'MIXELPIXEL — DIY board kit', '',
-        `Grid ${GRID.cols} x ${GRID.rows}, ${S.shape} pieces ${S.sizeMm} mm, pitch ${K.p.toFixed(2)} mm`,
-        `Plate: floor ${K.F} mm${K.G ? ` + ${K.G} mm color guide` : ''} + ${S.kitDepth} mm pockets = ${K.H.toFixed(1)} mm tall; pockets ${K.pocket.toFixed(2)} mm (${S.kitClear} mm clearance)`,
-        tiles.length > 1 ? `Split into ${tiles.length} plates (${tiles[0].nx} across × ${tiles[0].ny} down) that butt together edge to edge.` : '', '',
-        'PRINTING THE BOARD',
-        full && K.G ? '1. In each board folder, drag plate + all guide_*.stl files into the slicer together → "single object with multiple parts" = YES.\n2. Plate = one filament; each guide_ file = its color. Guides mark which color goes in each pocket.' : '1. Print the plate STL in one color. Use chart.png to know which color goes where.',
-        full ? '\nPRINTING THE PIECES\nEach pieces/ file is one color; print each in its filament. Counts include spares.' : '', '',
-        'COLORS  (symbol, hex, pockets, pieces in kit)', ...GRID.palette.map((p, j) => `${String(j + 1).padStart(2, '0')}  ${symOf(j)}  ${hex(p)}  ${cnt[j]}  ${pc[j]}`), '',
+        `Grid ${GRID.cols} x ${GRID.rows}, ${S.shape} pieces ${S.sizeMm} mm x ${S.kitPieceH} mm tall, pitch ${K.p.toFixed(2)} mm`,
+        K.through ? `Plate: ${K.H} mm thick with ${K.pocket.toFixed(2)} mm through holes (${S.kitClear} mm clearance). Pieces press in from the top.`
+          : `Plate: floor ${K.F} mm${K.G ? ` + ${K.G} mm color guide` : ''} + ${S.kitDepth} mm pockets = ${K.H.toFixed(1)} mm; pockets ${K.pocket.toFixed(2)} mm (${S.kitClear} mm clearance)`,
+        multi ? `Split into ${tiles.length} plates (${tiles[0].nx} across × ${tiles[0].ny} down) that butt together edge to edge.` : '', '',
+        'PRINT', '- Base plate: one color.' + (K.G ? ' Load the _guide_ files with it as parts of one object for colored pocket floors.' : ''),
+        '- Pieces: each color folder = one filament. Print them separately and keep them bagged by color.',
+        S.kitPieceMode === 'sheet' ? '- Pieces are full bed sheets for stock; pack the PACK count below per order.' : '- Piece files already hold the PACK count below.', '',
+        'PACK  (no, symbol, name, hex, pockets in design, pieces to pack)',
+        ...GRID.palette.map((p, j) => `${String(j + 1).padStart(2, '0')}  ${symOf(j)}  ${(p.name || '-').padEnd(16)}  ${hex(p)}  ${String(cnt[j]).padStart(5)}  ${String(pc[j]).padStart(5)}`),
+        `TOTAL pieces to pack: ${total(pc)}  + ${tiles.length} base plate(s) + chart`, '',
       ].join('\r\n')) });
-      download(zip(files), baseName() + (full ? '_diy_kit.zip' : '_base_plates.zip'));
-      toast('ok', full ? 'Kit ready' : 'Base plates ready', `${files.length} files · ${(files.reduce((a, f) => a + f.data.length, 0) / 1e6).toFixed(1)} MB`);
+      download(zip(files), baseName() + { plate: '_base_plates', pieces: '_pieces_by_color', kit: '_diy_kit' }[what] + '.zip');
+      toast('ok', 'ZIP ready', `${files.length} files · ${(files.reduce((a, f) => a + f.data.length, 0) / 1e6).toFixed(1)} MB`);
     } catch (e) { console.error(e); toast('err', 'Kit export failed', e.message); }
   }, 30);
 }

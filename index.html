@@ -95,7 +95,7 @@
       </div>
       <div class="field"><label for="nColors">Number of colors <output data-for="nColors"></output></label><input type="range" id="nColors" data-k="nColors" min="2" max="48" step="1"></div>
       <div class="field" id="customWrap" hidden>
-        <label for="customPalette">Filament / thread colors (hex, one per line or comma)</label>
+        <label for="customPalette">Your filaments — one per line: #HEX Name</label>
         <textarea id="customPalette" data-k="customPalette" rows="4" spellcheck="false"></textarea>
         <p class="helper">Uses up to “Number of colors” of these — the ones the image needs most.</p>
       </div>
@@ -119,26 +119,41 @@
 
     <section class="card kit">
       <h2><span class="num">06</span> DIY BOARD KIT</h2>
-      <p class="helper" style="margin:0 0 12px">A base plate with a pocket for every piece — customers press loose pieces in, like diamond painting. See it on the <b>BOARD</b> tab.</p>
+      <p class="helper" style="margin:0 0 12px">A base plate with a hole for every piece, plus the pieces printed separately per color. Customers press them in like diamond painting. See it on the <b>BOARD</b> tab.</p>
+      <div class="tabs small" role="tablist" aria-label="Hole type">
+        <button role="tab" type="button" data-hole="through">THROUGH HOLES</button>
+        <button role="tab" type="button" data-hole="pocket">POCKETS (CLOSED BOTTOM)</button>
+      </div>
       <div class="row2">
-        <div class="field"><label for="kitFloor">Floor (mm)</label><input type="number" id="kitFloor" data-k="kitFloor" min="0.4" max="10" step="0.1"></div>
-        <div class="field"><label for="kitDepth">Pocket depth (mm)</label><input type="number" id="kitDepth" data-k="kitDepth" min="0.2" max="10" step="0.1"></div>
+        <div class="field through-only"><label for="kitThick">Plate thickness (mm)</label><input type="number" id="kitThick" data-k="kitThick" min="0.6" max="20" step="0.1"></div>
+        <div class="field pocket-only"><label for="kitFloor">Floor (mm)</label><input type="number" id="kitFloor" data-k="kitFloor" min="0.4" max="10" step="0.1"></div>
+        <div class="field pocket-only"><label for="kitDepth">Pocket depth (mm)</label><input type="number" id="kitDepth" data-k="kitDepth" min="0.2" max="10" step="0.1"></div>
+        <div class="field through-only"><label for="kitPieceH">Piece height (mm)</label><input type="number" id="kitPieceH" data-k="kitPieceH" min="0.4" max="20" step="0.1"></div>
       </div>
       <div class="row2">
         <div class="field"><label for="kitClear">Fit clearance (mm)</label><input type="number" id="kitClear" data-k="kitClear" min="0" max="2" step="0.05"></div>
-        <div class="field"><label for="kitPieceH">Piece height (mm)</label><input type="number" id="kitPieceH" data-k="kitPieceH" min="0.4" max="20" step="0.1"></div>
+        <div class="field pocket-only"><label for="kitPieceH2">Piece height (mm)</label><input type="number" id="kitPieceH2" data-k="kitPieceH" min="0.4" max="20" step="0.1"></div>
+        <div class="field through-only"><label for="kitBed">Printer bed (mm)</label><input type="number" id="kitBed" data-k="kitBed" min="60" max="1000" step="1"></div>
       </div>
       <div class="row2">
         <div class="field"><label for="kitMargin">Border (mm)</label><input type="number" id="kitMargin" data-k="kitMargin" min="0" max="50" step="0.5"></div>
-        <div class="field"><label for="kitBed">Printer bed (mm)</label><input type="number" id="kitBed" data-k="kitBed" min="60" max="1000" step="1"></div>
+        <div class="field pocket-only"><label for="kitBed2">Printer bed (mm)</label><input type="number" id="kitBed2" data-k="kitBed" min="60" max="1000" step="1"></div>
       </div>
-      <label class="check"><input type="checkbox" data-k="kitGuides"><span class="box"></span> Color guide in each pocket floor</label>
-      <label class="check"><input type="checkbox" data-k="kitPocketEmpty"><span class="box"></span> Pockets on background cells too</label>
+      <label class="check pocket-only"><input type="checkbox" data-k="kitGuides"><span class="box"></span> Color guide in each pocket floor (multi-color plate)</label>
+      <label class="check"><input type="checkbox" data-k="kitPocketEmpty"><span class="box"></span> Holes on background cells too</label>
       <div class="field"><label for="kitSpare">Spare pieces (%) <output data-for="kitSpare"></output></label><input type="range" id="kitSpare" data-k="kitSpare" min="0" max="30" step="1"></div>
+      <div class="field"><label>Pieces per color file</label>
+        <div class="tabs small" role="tablist" aria-label="Pieces per file" style="margin:0">
+          <button role="tab" type="button" data-pmode="exact">EXACT FOR THIS DESIGN</button>
+          <button role="tab" type="button" data-pmode="sheet">FULL BED SHEET (STOCK)</button>
+        </div>
+      </div>
       <p class="helper" id="kitInfo">—</p>
       <div class="exports" style="margin-top:12px">
-        <button class="btn filled" type="button" data-export="kitplate">BASE PLATE (STL)</button>
-        <button class="btn outline" type="button" data-export="kit">FULL KIT: PLATE + GUIDES + PIECES (ZIP)</button>
+        <button class="btn filled" type="button" data-export="kit:plate">BASE PLATE (STL)</button>
+        <button class="btn outline" type="button" data-export="kit:pieces">PIECES — FOLDER PER COLOR (ZIP)</button>
+        <button class="btn outline" type="button" data-export="kit:packing">PACKING LIST (PNG)</button>
+        <button class="btn outline" type="button" data-export="kit:kit">EVERYTHING (ZIP)</button>
       </div>
     </section>
 
@@ -198,7 +213,7 @@
     <div class="card">
       <div class="legendhead">
         <h2>COLOR KEY</h2>
-        <p class="helper">Click a row to select it for painting. Click a swatch to change the color. ✕ merges it into the nearest color.</p>
+        <p class="helper">Click a row to select it for painting. Click a swatch to change the color. ↓ downloads that color's pieces. ✕ merges it into the nearest color.</p>
       </div>
       <div class="tablewrap">
         <table class="legend">
