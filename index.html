@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mixelpixel</title>
+<meta name="description" content="Turn any image into a dot / pixel pattern for 3D printing, cross stitch and diamond painting.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%23000'/%3E%3Ccircle cx='10' cy='10' r='5' fill='%2300C2CB'/%3E%3Ccircle cx='22' cy='10' r='5' fill='%23FF00FF'/%3E%3Ccircle cx='10' cy='22' r='5' fill='%23FFD700'/%3E%3Ccircle cx='22' cy='22' r='5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>MIXELPIXEL</h1>
+    <p class="tag">IMAGE → DOTS. BOLD. PRINTABLE. COUNTABLE.</p>
+  </div>
+  <div class="rules">
+    <p>Upload an image. Pick a shape, grid and color count. Export a stitch chart, SVG, or one STL per color for multi-material 3D printing.</p>
+    <div class="counters">
+      <div class="counter"><b id="cColors">0</b><span>COLORS</span></div>
+      <div class="counter"><b id="cGrid">0×0</b><span>GRID</span></div>
+      <div class="counter hot"><b id="cPieces">0</b><span>PIECES</span></div>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- ============ CONTROLS ============ -->
+  <aside class="panel" id="panel">
+
+    <section class="card">
+      <h2><span class="num">01</span> SOURCE</h2>
+      <label class="drop" id="drop" tabindex="0">
+        <input type="file" id="file" accept="image/*" hidden>
+        <img id="thumb" alt="" hidden>
+        <span id="dropText"><b>DROP IMAGE</b><br>or click · or paste</span>
+      </label>
+      <div class="row2">
+        <button class="btn outline sm" id="sampleBtn" type="button">TRY SAMPLE</button>
+        <button class="btn outline sm" id="clearBtn" type="button">CLEAR</button>
+      </div>
+      <details class="more">
+        <summary>ADJUST IMAGE</summary>
+        <div class="field"><label for="brightness">Brightness <output data-for="brightness"></output></label><input type="range" id="brightness" data-k="brightness" min="-100" max="100" step="1"></div>
+        <div class="field"><label for="contrast">Contrast <output data-for="contrast"></output></label><input type="range" id="contrast" data-k="contrast" min="-100" max="100" step="1"></div>
+        <div class="field"><label for="saturation">Saturation <output data-for="saturation"></output></label><input type="range" id="saturation" data-k="saturation" min="-100" max="100" step="1"></div>
+        <label class="check"><input type="checkbox" data-k="knockout"><span class="box"></span> Knock out background (no piece)</label>
+        <div class="field"><label for="knockTol">Background tolerance <output data-for="knockTol"></output></label><input type="range" id="knockTol" data-k="knockTol" min="2" max="60" step="1"></div>
+        <button class="btn text sm" id="resetAdj" type="button">RESET ADJUSTMENTS</button>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">02</span> GRID</h2>
+      <div class="row2">
+        <div class="field"><label for="cols">Columns</label><input type="number" id="cols" data-k="cols" min="4" max="300" step="1"></div>
+        <div class="field"><label for="rows">Rows</label><input type="number" id="rows" data-k="rows" min="4" max="300" step="1"></div>
+      </div>
+      <input type="range" id="colsRange" aria-label="Columns slider" min="4" max="300" step="1">
+      <label class="check"><input type="checkbox" data-k="lockAspect"><span class="box"></span> Lock to image aspect (unlocked = crop to fill)</label>
+      <div class="field">
+        <label for="targetW">Or fit to width (mm)</label>
+        <div class="inline"><input type="number" id="targetW" min="10" step="1" placeholder="e.g. 200"><button class="btn outline sm" id="fitW" type="button">FIT</button></div>
+      </div>
+      <p class="helper" id="sizeInfo">—</p>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">03</span> SHAPE</h2>
+      <div class="shapes" id="shapes" role="radiogroup" aria-label="Piece shape"></div>
+      <div class="row2">
+        <div class="field"><label for="sizeMm">Shape size (mm)</label><input type="number" id="sizeMm" data-k="sizeMm" min="0.5" max="50" step="0.1"></div>
+        <div class="field"><label for="gapMm">Gap (mm)</label><input type="number" id="gapMm" data-k="gapMm" min="0" max="20" step="0.1"></div>
+      </div>
+      <div class="presets" aria-label="Size presets">
+        <button class="chip" type="button" data-preset="2.5,0.3,square">DIAMOND ART 2.5</button>
+        <button class="chip" type="button" data-preset="2.8,0.2,circle">ROUND DRILL 2.8</button>
+        <button class="chip" type="button" data-preset="4.7,0.3,circle">PERLER 5MM</button>
+        <button class="chip" type="button" data-preset="1.6,0.2,square">STITCH 14CT</button>
+      </div>
+      <label class="check"><input type="checkbox" data-k="stagger"><span class="box"></span> Stagger alternate rows (honeycomb)</label>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">04</span> COLORS</h2>
+      <div class="tabs small" role="tablist">
+        <button role="tab" type="button" data-pm="auto">AUTO</button>
+        <button role="tab" type="button" data-pm="custom">MY FILAMENTS</button>
+        <button role="tab" type="button" data-pm="gray">GRAYSCALE</button>
+      </div>
+      <div class="field"><label for="nColors">Number of colors <output data-for="nColors"></output></label><input type="range" id="nColors" data-k="nColors" min="2" max="48" step="1"></div>
+      <div class="field" id="customWrap" hidden>
+        <label for="customPalette">Filament / thread colors (hex, one per line or comma)</label>
+        <textarea id="customPalette" data-k="customPalette" rows="4" spellcheck="false"></textarea>
+        <p class="helper">Uses up to “Number of colors” of these — the ones the image needs most.</p>
+      </div>
+      <label class="check"><input type="checkbox" data-k="dither"><span class="box"></span> Dither (smoother gradients, noisier pattern)</label>
+      <div class="field"><label for="minCount">Clean up: merge colors under <output data-for="minCount"></output> pieces</label><input type="range" id="minCount" data-k="minCount" min="0" max="50" step="1"></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">05</span> 3D PLATE</h2>
+      <label class="check"><input type="checkbox" data-k="includeBase"><span class="box"></span> Include base plate</label>
+      <div class="row2">
+        <div class="field"><label for="baseMm">Base thickness (mm)</label><input type="number" id="baseMm" data-k="baseMm" min="0.2" max="20" step="0.1"></div>
+        <div class="field"><label for="heightMm">Piece height (mm)</label><input type="number" id="heightMm" data-k="heightMm" min="0.2" max="20" step="0.1"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="marginMm">Plate margin (mm)</label><input type="number" id="marginMm" data-k="marginMm" min="0" max="50" step="0.5"></div>
+        <div class="field"><label for="plateColor">Plate color</label><input type="color" id="plateColor" data-k="plateColor"></div>
+      </div>
+      <p class="helper" id="plateInfo">—</p>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">06</span> EXPORT</h2>
+      <div class="exports">
+        <button class="btn filled" type="button" data-export="stl">3D PRINT FILES (.ZIP)</button>
+        <button class="btn outline" type="button" data-export="chart">STITCH CHART (PNG)</button>
+        <button class="btn outline" type="button" data-export="png">PREVIEW (PNG)</button>
+        <button class="btn outline" type="button" data-export="svg">VECTOR (SVG · MM)</button>
+        <button class="btn text" type="button" data-export="csv">COLOR LIST (CSV)</button>
+      </div>
+      <p class="helper">The ZIP has one STL per color + the base. Load them together as <b>one object with multiple parts</b> in Bambu / Orca / Prusa, then assign a filament to each part.</p>
+    </section>
+  </aside>
+
+  <!-- ============ WORKSPACE ============ -->
+  <section class="work">
+    <div class="card stagecard">
+      <div class="stagebar">
+        <div class="tabs" role="tablist" aria-label="View">
+          <button role="tab" type="button" data-view="preview">PREVIEW</button>
+          <button role="tab" type="button" data-view="chart">CHART</button>
+          <button role="tab" type="button" data-view="original">ORIGINAL</button>
+        </div>
+        <div class="tools" role="toolbar" aria-label="Tools">
+          <button class="tool" type="button" data-tool="view" title="Inspect (hover)" aria-label="Inspect"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/></svg></button>
+          <button class="tool" type="button" data-tool="paint" title="Paint with selected color" aria-label="Paint"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg></button>
+          <button class="tool" type="button" data-tool="erase" title="Erase (no piece)" aria-label="Erase"><svg viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+          <button class="tool" type="button" data-tool="pick" title="Pick color from pattern" aria-label="Pick"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-9 9H5v-6z"/></svg></button>
+          <span class="sep"></span>
+          <button class="tool" type="button" id="zoomOut" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+          <span class="zoomval" id="zoomVal">100%</span>
+          <button class="tool" type="button" id="zoomIn" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button>
+        </div>
+      </div>
+      <div class="stage" id="stage">
+        <div class="empty" id="empty">
+          <svg viewBox="0 0 48 48" class="emptyicon"><rect x="6" y="6" width="36" height="36" rx="3"/><circle cx="17" cy="17" r="4"/><circle cx="31" cy="17" r="4"/><circle cx="17" cy="31" r="4"/><circle cx="31" cy="31" r="4"/></svg>
+          <h3>NO IMAGE YET</h3>
+          <p>Drop a photo, logo or artwork anywhere on this page.</p>
+          <div class="row2 center">
+            <button class="btn filled" type="button" id="emptyUpload">UPLOAD YOUR FIRST IMAGE</button>
+            <button class="btn outline" type="button" id="emptySample">USE SAMPLE</button>
+          </div>
+        </div>
+        <canvas id="canvas" hidden></canvas>
+        <div class="tip" id="tip" hidden></div>
+        <div class="busy" id="busy" hidden><span>CRUNCHING PIXELS…</span></div>
+      </div>
+      <label class="check inline-opts"><input type="checkbox" data-k="outline"><span class="box"></span> Outlines</label>
+      <label class="check inline-opts"><input type="checkbox" data-k="gridLines"><span class="box"></span> Grid every 10</label>
+      <label class="check inline-opts"><input type="checkbox" data-k="symbols"><span class="box"></span> Symbols on preview</label>
+    </div>
+
+    <div class="card">
+      <div class="legendhead">
+        <h2>COLOR KEY</h2>
+        <p class="helper">Click a row to select it for painting. Click a swatch to change the color. ✕ merges it into the nearest color.</p>
+      </div>
+      <div class="tablewrap">
+        <table class="legend">
+          <thead><tr><th>SYM</th><th>COLOR</th><th>HEX</th><th class="r">PIECES</th><th class="r">%</th><th class="r">ACTIONS</th></tr></thead>
+          <tbody id="legendBody"><tr><td colspan="6" class="muted">Upload an image to generate the key.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">MIXELPIXEL · everything runs in your browser — images never leave your device.</footer>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<input type="color" id="recolor" hidden>
+
+<script src="app.js"></script>
+</body>
+</html>
