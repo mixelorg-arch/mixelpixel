@@ -77,6 +77,7 @@
         <div class="field"><label for="gapMm">Gap (mm)</label><input type="number" id="gapMm" data-k="gapMm" min="0" max="20" step="0.1"></div>
       </div>
       <div class="presets" aria-label="Size presets">
+        <button class="chip" type="button" data-preset="4.5,1.2,square">DIY BOARD 4.5</button>
         <button class="chip" type="button" data-preset="2.5,0.3,square">DIAMOND ART 2.5</button>
         <button class="chip" type="button" data-preset="2.8,0.2,circle">ROUND DRILL 2.8</button>
         <button class="chip" type="button" data-preset="4.7,0.3,circle">PERLER 5MM</button>
@@ -103,7 +104,7 @@
     </section>
 
     <section class="card">
-      <h2><span class="num">05</span> 3D PLATE</h2>
+      <h2><span class="num">05</span> FUSED PRINT</h2>
       <label class="check"><input type="checkbox" data-k="includeBase"><span class="box"></span> Include base plate</label>
       <div class="row2">
         <div class="field"><label for="baseMm">Base thickness (mm)</label><input type="number" id="baseMm" data-k="baseMm" min="0.2" max="20" step="0.1"></div>
@@ -116,10 +117,35 @@
       <p class="helper" id="plateInfo">—</p>
     </section>
 
+    <section class="card kit">
+      <h2><span class="num">06</span> DIY BOARD KIT</h2>
+      <p class="helper" style="margin:0 0 12px">A base plate with a pocket for every piece — customers press loose pieces in, like diamond painting. See it on the <b>BOARD</b> tab.</p>
+      <div class="row2">
+        <div class="field"><label for="kitFloor">Floor (mm)</label><input type="number" id="kitFloor" data-k="kitFloor" min="0.4" max="10" step="0.1"></div>
+        <div class="field"><label for="kitDepth">Pocket depth (mm)</label><input type="number" id="kitDepth" data-k="kitDepth" min="0.2" max="10" step="0.1"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="kitClear">Fit clearance (mm)</label><input type="number" id="kitClear" data-k="kitClear" min="0" max="2" step="0.05"></div>
+        <div class="field"><label for="kitPieceH">Piece height (mm)</label><input type="number" id="kitPieceH" data-k="kitPieceH" min="0.4" max="20" step="0.1"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="kitMargin">Border (mm)</label><input type="number" id="kitMargin" data-k="kitMargin" min="0" max="50" step="0.5"></div>
+        <div class="field"><label for="kitBed">Printer bed (mm)</label><input type="number" id="kitBed" data-k="kitBed" min="60" max="1000" step="1"></div>
+      </div>
+      <label class="check"><input type="checkbox" data-k="kitGuides"><span class="box"></span> Color guide in each pocket floor</label>
+      <label class="check"><input type="checkbox" data-k="kitPocketEmpty"><span class="box"></span> Pockets on background cells too</label>
+      <div class="field"><label for="kitSpare">Spare pieces (%) <output data-for="kitSpare"></output></label><input type="range" id="kitSpare" data-k="kitSpare" min="0" max="30" step="1"></div>
+      <p class="helper" id="kitInfo">—</p>
+      <div class="exports" style="margin-top:12px">
+        <button class="btn filled" type="button" data-export="kitplate">BASE PLATE (STL)</button>
+        <button class="btn outline" type="button" data-export="kit">FULL KIT: PLATE + GUIDES + PIECES (ZIP)</button>
+      </div>
+    </section>
+
     <section class="card">
-      <h2><span class="num">06</span> EXPORT</h2>
+      <h2><span class="num">07</span> EXPORT</h2>
       <div class="exports">
-        <button class="btn filled" type="button" data-export="stl">3D PRINT FILES (.ZIP)</button>
+        <button class="btn filled" type="button" data-export="stl">FUSED PIXEL ART (.ZIP)</button>
         <button class="btn outline" type="button" data-export="chart">STITCH CHART (PNG)</button>
         <button class="btn outline" type="button" data-export="png">PREVIEW (PNG)</button>
         <button class="btn outline" type="button" data-export="svg">VECTOR (SVG · MM)</button>
@@ -136,6 +162,7 @@
         <div class="tabs" role="tablist" aria-label="View">
           <button role="tab" type="button" data-view="preview">PREVIEW</button>
           <button role="tab" type="button" data-view="chart">CHART</button>
+          <button role="tab" type="button" data-view="board">BOARD</button>
           <button role="tab" type="button" data-view="original">ORIGINAL</button>
         </div>
         <div class="tools" role="toolbar" aria-label="Tools">

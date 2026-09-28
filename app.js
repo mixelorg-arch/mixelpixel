@@ -16,6 +16,8 @@ const DEFAULTS = {
   customPalette: '#000000\n#FFFFFF\n#FF0000\n#FFD700\n#00C2CB\n#FF00FF\n#1E3A8A\n#16A34A\n#8B4513\n#9CA3AF',
   brightness: 0, contrast: 0, saturation: 0, knockout: false, knockTol: 14,
   includeBase: true, baseMm: 1.2, heightMm: 1.0, marginMm: 3, plateColor: '#F5F5DC',
+  kitFloor: 1.2, kitDepth: 1.2, kitClear: 0.2, kitPieceH: 2.0, kitGuides: true, kitGuideH: 0.4,
+  kitPocketEmpty: false, kitSpare: 5, kitMargin: 5, kitBed: 250,
   outline: false, gridLines: false, symbols: false,
   view: 'preview', tool: 'view', zoom: 1,
 };
@@ -327,6 +329,25 @@ function drawPreview(g, W, H, P, pad) {
   drawPattern(g, P, ox, oy, { outline: S.outline, symbols: S.symbols, gridLines: S.gridLines });
   return { ox, oy };
 }
+// The empty board a customer receives: pockets, tinted by the color guide printed in each floor
+function drawBoard(g, W, H, P, pad) {
+  const K = kitGeom(), mm = P / K.p, m = S.kitMargin * mm, { cols, rows, idx, palette: pal } = GRID;
+  g.fillStyle = '#F5F5DC'; g.fillRect(0, 0, W, H);
+  g.fillStyle = S.plateColor; g.strokeStyle = '#000'; g.lineWidth = 2;
+  g.beginPath(); g.rect(pad, pad, W - pad * 2, H - pad * 2); g.fill(); g.stroke();
+  const tiles = kitTiles();
+  if (tiles.length > 1) { g.setLineDash([6, 4]); g.strokeStyle = '#FF00FF'; g.lineWidth = 2; g.beginPath();
+    tiles.forEach(t => { if (t.c0) { g.moveTo(pad + m + t.c0 * P, pad); g.lineTo(pad + m + t.c0 * P, H - pad); } if (t.r0) { g.moveTo(pad, pad + m + t.r0 * P); g.lineTo(W - pad, pad + m + t.r0 * P); } });
+    g.stroke(); g.setLineDash([]); }
+  const s = P * K.pocket / K.p, pts = polyOf(S.shape);
+  g.lineWidth = Math.max(0.6, s * 0.06); g.strokeStyle = 'rgba(0,0,0,.75)';
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const j = idx[r * cols + c]; if (j < 0 && !S.kitPocketEmpty) continue;
+    const [ux, uy] = cellCenter(c, r), x = pad + m + ux * P, y = pad + m + uy * P;
+    g.beginPath(); g.moveTo(x + pts[0][0] * s, y + pts[0][1] * s); for (let k = 1; k < pts.length; k++) g.lineTo(x + pts[k][0] * s, y + pts[k][1] * s); g.closePath();
+    g.fillStyle = S.kitGuides && j >= 0 ? hex(pal[j]) : 'rgba(0,0,0,.18)'; g.fill(); g.stroke();
+  }
+}
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 
 function drawChart(g, P, gut, withLegend) {
@@ -393,6 +414,12 @@ function render() {
     const P = clampP(P0 * S.zoom, GRID.cols + 2, GRID.rows + 2, dpr);
     cssW = gut * 2 + GRID.cols * P; cssH = gut * 2 + GRID.rows * P; setCanvas(cssW, cssH, dpr);
     drawChart(ctx, P, gut, false); view = { P, ox: gut, oy: gut, chart: true };
+  } else if (GRID && S.view === 'board') {
+    const K = kitGeom(), m = S.kitMargin, pad = 12, bw = GRID.cols * K.p + (S.stagger ? K.p / 2 : 0) + 2 * m, bh = GRID.rows * K.p + 2 * m;
+    const mmFit = Math.min((availW - pad * 2) / bw, (availH - pad * 2) / bh);
+    const P = clampP(mmFit * K.p * S.zoom, bw / K.p, bh / K.p, dpr), mm = P / K.p;
+    cssW = bw * mm + pad * 2; cssH = bh * mm + pad * 2; setCanvas(cssW, cssH, dpr);
+    drawBoard(ctx, cssW, cssH, P, pad); view = { P, ox: pad + m * mm, oy: pad + m * mm, chart: false };
   } else if (GRID) {
     const L = layoutMm(), pad = 12;
     const mmFit = Math.min((availW - pad * 2) / L.plateW, (availH - pad * 2) / L.plateH);
@@ -421,6 +448,7 @@ function updateCounters() {
   $('#plateInfo').innerHTML = S.includeBase
     ? `Plate: <b>${L.plateW.toFixed(1)} × ${L.plateH.toFixed(1)} × ${(S.baseMm + S.heightMm).toFixed(1)} mm</b> total`
     : `Pieces only: <b>${S.heightMm} mm</b> tall, no base.`;
+  $('#kitInfo').innerHTML = kitInfoHTML();
   if (L.plateW > 256 || L.plateH > 256) $('#plateInfo').innerHTML += `<br>⚠ Larger than a 256 mm bed — split it or shrink the grid.`;
 }
 
@@ -457,7 +485,8 @@ function syncControls() {
 const aspect = () => IMG ? (IMG.naturalHeight || IMG.height) / (IMG.naturalWidth || IMG.width) : 1;
 function setKey(k, v) {
   if (['cols', 'rows', 'nColors', 'minCount', 'brightness', 'contrast', 'saturation', 'knockTol'].includes(k)) v = Math.round(+v || 0);
-  if (['sizeMm', 'gapMm', 'baseMm', 'heightMm', 'marginMm'].includes(k)) v = +v || 0;
+  if (['sizeMm', 'gapMm', 'baseMm', 'heightMm', 'marginMm', 'kitFloor', 'kitDepth', 'kitClear', 'kitPieceH', 'kitGuideH', 'kitMargin', 'kitBed', 'kitSpare'].includes(k)) v = Math.max(0, +v || 0);
+  if (k === 'kitBed') v = clamp(v, 60, 1000);
   if (k === 'cols') { v = clamp(v, 4, 300); if (S.lockAspect) S.rows = clamp(Math.round(v * aspect()), 4, 300); }
   if (k === 'rows') { v = clamp(v, 4, 300); if (S.lockAspect) S.cols = clamp(Math.round(v / aspect()), 4, 300); }
   if (k === 'sizeMm') v = clamp(v, 0.5, 50);
@@ -622,7 +651,9 @@ function doExport(kind) {
       const c = counts(), rows = [['symbol', 'hex', 'r', 'g', 'b', 'pieces']].concat(GRID.palette.map((p, j) => [symOf(j), hex(p), p.r, p.g, p.b, c[j]]));
       download(new Blob(['﻿' + rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' }), baseName() + '_colors.csv');
     } else if (kind === 'stl') exportSTL();
-    if (kind !== 'stl') toast('ok', 'Exported', kind.toUpperCase() + ' downloaded.');
+    else if (kind === 'kitplate') exportKit(false);
+    else if (kind === 'kit') exportKit(true);
+    if (!['stl', 'kit', 'kitplate'].includes(kind)) toast('ok', 'Exported', kind.toUpperCase() + ' downloaded.');
   } catch (e) { console.error(e); toast('err', 'Export failed', e.message); }
 }
 
@@ -721,6 +752,168 @@ function exportSTL() {
   }, 30);
 }
 const symName = j => /[A-Za-z0-9]/.test(symOf(j)) ? symOf(j) : 'c' + (j + 1);
+
+/* ---------- DIY board kit: pocketed base plate + color guides + loose pieces ----------
+   The plate top is tiled cell by cell (square minus pocket, joined by a bridge so ear clipping
+   can do it), plus fillers and a margin frame. Every shared edge is built from the same
+   u/v → mm arithmetic, so neighbouring cells meet exactly and the mesh is watertight. */
+class Mesh {
+  constructor() { this.a = new Float32Array(9 * 4096); this.n = 0; }
+  tri(a, b, c) {
+    if ((this.n + 1) * 9 > this.a.length) { const g = new Float32Array(this.a.length * 2); g.set(this.a); this.a = g; }
+    this.a.set([a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]], this.n++ * 9);
+  }
+  stl() {
+    const w = stlWriter(this.n), A = this.a;
+    for (let i = 0; i < this.n; i++) { const o = i * 9; w.tri([A[o], A[o + 1], A[o + 2]], [A[o + 3], A[o + 4], A[o + 5]], [A[o + 6], A[o + 7], A[o + 8]]); }
+    return w.bytes();
+  }
+}
+const area2 = P => { let a = 0; P.forEach((p, i) => { const q = P[(i + 1) % P.length]; a += p[0] * q[1] - q[0] * p[1]; }); return a / 2; };
+const ccw = (a, b, c) => ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) > 0 ? [a, b, c] : [a, c, b];
+const at = (p, z) => [p[0], p[1], z];
+function walls(m, poly, z0, z1, inward) { // poly in XY; outward-facing unless inward
+  let pl = area2(poly) > 0 ? poly : poly.slice().reverse(); if (inward) pl = pl.slice().reverse();
+  for (let i = 0; i < pl.length; i++) { const a = pl[i], b = pl[(i + 1) % pl.length]; m.tri(at(a, z0), at(b, z0), at(b, z1)); m.tri(at(a, z0), at(b, z1), at(a, z1)); }
+}
+function prism(m, poly, tris, z0, z1) {
+  tris.forEach(([i, j, k]) => { const [a, b, c] = ccw(poly[i], poly[j], poly[k]); m.tri(at(a, z1), at(b, z1), at(c, z1)); m.tri(at(a, z0), at(c, z0), at(b, z0)); });
+  walls(m, poly, z0, z1, false);
+}
+function unitShape(seg = 20) { const p = polyOf(S.shape, seg); if (area2(p) < 0) p.reverse(); return { poly: p, tris: earClip(p) }; }
+
+function kitGeom() {
+  const p = pitch(), want = S.sizeMm + S.kitClear, pocket = Math.min(want, p - 0.4), G = S.kitGuides ? S.kitGuideH : 0;
+  return { p, pocket, wall: p - pocket, limited: want > p - 0.4, F: S.kitFloor, G, H: S.kitFloor + G + S.kitDepth };
+}
+function kitTiles() { // split along cell lines so each plate fits the printer bed
+  const { p } = kitGeom(), m = S.kitMargin, cols = GRID.cols, rows = GRID.rows;
+  const per = Math.max(1, Math.floor((S.kitBed - 2 * m) / p));
+  const nx = S.stagger ? 1 : Math.ceil(cols / per), ny = S.stagger ? 1 : Math.ceil(rows / per), out = [];
+  for (let ty = 0; ty < ny; ty++) for (let tx = 0; tx < nx; tx++) out.push({ tx, ty, nx, ny,
+    c0: Math.round(tx * cols / nx), c1: Math.round((tx + 1) * cols / nx), r0: Math.round(ty * rows / ny), r1: Math.round((ty + 1) * rows / ny) });
+  return out;
+}
+function tileDims(t) {
+  const { p } = kitGeom(), m = S.kitMargin;
+  const ml = t.c0 === 0 ? m : 0, mr = t.c1 === GRID.cols ? m : 0, mt = t.r0 === 0 ? m : 0, mb = t.r1 === GRID.rows ? m : 0;
+  const Wu = t.c1 - t.c0 + (S.stagger ? 0.5 : 0), Hu = t.r1 - t.r0;
+  return { ml, mr, mt, mb, Wu, Hu, W: ml + Wu * p + mr, H: mt + Hu * p + mb };
+}
+function cellTemplate(scale) { // unit cell (±0.5), y down; ring = cell minus pocket, bridged at the top-right corner
+  const hole = polyOf(S.shape, 20).map(([x, y]) => [x * scale, y * scale]); if (area2(hole) < 0) hole.reverse();
+  const n = hole.length, A = [0.5, -0.5], tail = S.stagger ? [[0.5, 0.5], [0, 0.5], [-0.5, 0.5], [-0.5, -0.5], [0, -0.5]] : [[0.5, 0.5], [-0.5, 0.5], [-0.5, -0.5]];
+  let mi = 0; hole.forEach((q, i) => { const b = hole[mi]; if (q[0] > b[0] + 1e-12 || (Math.abs(q[0] - b[0]) <= 1e-12 && q[1] < b[1])) mi = i; });
+  const ring = [A]; for (let k = 0; k <= n; k++) ring.push(hole[((mi - k) % n + n) % n]); ring.push(A, ...tail);
+  const full = [A, ...tail];
+  return { hole, holeTris: earClip(hole), ring, ringTris: earClip(ring), full, fullTris: earClip(full) };
+}
+
+function buildBoardTile(t) {
+  const K = kitGeom(), d = tileDims(t), tpl = cellTemplate(K.pocket / K.p), cols = GRID.cols;
+  const plate = new Mesh(), guides = GRID.palette.map(() => null), foot = [];
+  const P = (u, v) => [d.ml + (u - t.c0) * K.p, d.H - (d.mt + (v - t.r0) * K.p)];
+  const X = x => x, Yv = y => d.H - y; // raw mm (y down) → XY for the frame corners
+  const add = (pts, tris, z) => tris.forEach(([a, b, c]) => foot.push([pts[a], pts[b], pts[c], z]));
+  for (let r = t.r0; r < t.r1; r++) for (let c = t.c0; c < t.c1; c++) {
+    const cu = c + 0.5 + (S.stagger && r % 2 ? 0.5 : 0), cv = r + 0.5, j = GRID.idx[r * cols + c];
+    const map = q => P(cu + q[0], cv + q[1]);
+    if (j < 0 && !S.kitPocketEmpty) { add(tpl.full.map(map), tpl.fullTris, K.H); continue; }
+    add(tpl.ring.map(map), tpl.ringTris, K.H);
+    const hole = tpl.hole.map(map);
+    add(hole, tpl.holeTris, K.F);
+    walls(plate, hole, K.F, K.H, true);
+    if (K.G && j >= 0) prism(guides[j] || (guides[j] = new Mesh()), hole, tpl.holeTris, K.F, K.F + K.G);
+  }
+  if (S.stagger) for (let r = t.r0; r < t.r1; r++) { // half-cell fillers at the ragged row ends
+    const [u0, u1] = r % 2 ? [0, 0.5] : [GRID.cols, GRID.cols + 0.5];
+    const q = [P(u0, r), P(u1, r), P(u1, r + 1), P(u0, r + 1)]; add(q, [[0, 1, 2], [0, 2, 3]], K.H);
+  }
+  // margin frame: four strips, each fanned from its two outer corners to the pattern edge points
+  const step = S.stagger ? 0.5 : 1, us = [], vs = [];
+  for (let u = 0; u <= d.Wu + 1e-9; u += step) us.push(t.c0 + u);
+  for (let v = t.r0; v <= t.r1; v++) vs.push(v);
+  const strip = (L, O1, O2) => { const mid = L.length >> 1; for (let i = 0; i < L.length - 1; i++) foot.push([i < mid ? O1 : O2, L[i], L[i + 1], K.H]); foot.push([O1, L[mid], O2, K.H]); };
+  const yTop = d.mt, yBot = d.mt + d.Hu * K.p, xL = d.ml, xR = d.ml + d.Wu * K.p;
+  if (d.mt > 0) strip([...(d.ml > 0 ? [[X(0), Yv(yTop)]] : []), ...us.map(u => P(u, t.r0)), ...(d.mr > 0 ? [[X(d.W), Yv(yTop)]] : [])], [X(0), Yv(0)], [X(d.W), Yv(0)]);
+  if (d.mb > 0) strip([...(d.ml > 0 ? [[X(0), Yv(yBot)]] : []), ...us.map(u => P(u, t.r1)), ...(d.mr > 0 ? [[X(d.W), Yv(yBot)]] : [])], [X(0), Yv(d.H)], [X(d.W), Yv(d.H)]);
+  if (d.ml > 0) strip(vs.map(v => P(t.c0, v)), [X(0), Yv(yTop)], [X(0), Yv(yBot)]);
+  if (d.mr > 0) strip(vs.map(v => P(t.c0 + d.Wu, v)), [X(d.W), Yv(yTop)], [X(d.W), Yv(yBot)]);
+  void xL; void xR;
+  // top/floor faces, the bottom, and walls around every edge that only one footprint triangle uses
+  const key = p => Math.round(p[0] * 1e4) * 1e7 + Math.round(p[1] * 1e4), edges = new Map();
+  foot.forEach(f => {
+    const [a, b, c] = ccw(f[0], f[1], f[2]);
+    plate.tri(at(a, f[3]), at(b, f[3]), at(c, f[3])); plate.tri(at(a, 0), at(c, 0), at(b, 0));
+    [[a, b], [b, c], [c, a]].forEach(([p, q]) => { const kp = key(p), kq = key(q), k = kp < kq ? kp + '_' + kq : kq + '_' + kp, e = edges.get(k); if (e) e.n++; else edges.set(k, { n: 1, p, q }); });
+  });
+  edges.forEach(e => { if (e.n === 1) { plate.tri(at(e.p, 0), at(e.q, 0), at(e.q, K.H)); plate.tri(at(e.p, 0), at(e.q, K.H), at(e.p, K.H)); } });
+  return { plate, guides, d };
+}
+
+function kitPieceCounts() { const c = counts(); return c.map(n => n ? Math.ceil(n * (1 + S.kitSpare / 100)) : 0); }
+function buildPieces(n) { // n loose pieces packed on bed-sized sheets → array of Mesh
+  const { poly, tris } = unitShape(), s = S.sizeMm, sp = s + 1.5, per = Math.max(1, Math.floor((S.kitBed - 10) / sp)), sheet = per * per, out = [];
+  for (let i = 0; i < n; i++) {
+    if (i % sheet === 0) out.push(new Mesh());
+    const k = i % sheet, x = 5 + (k % per + 0.5) * sp, y = 5 + (Math.floor(k / per) + 0.5) * sp;
+    prism(out[out.length - 1], poly.map(([a, b]) => [x + a * s, y - b * s]), tris, 0, S.kitPieceH);
+  }
+  return out;
+}
+
+function kitInfoHTML() {
+  if (!GRID) return 'Upload an image to size the board.';
+  const K = kitGeom(), tiles = kitTiles(), d = tileDims(tiles[0]), pc = kitPieceCounts();
+  let h = `Board: <b>${tiles.length === 1 ? `${d.W.toFixed(1)} × ${d.H.toFixed(1)}` : `${tiles.length} plates (${tiles[0].nx}×${tiles[0].ny})`}</b> × ${K.H.toFixed(1)} mm · pocket ${K.pocket.toFixed(2)} mm · wall ${K.wall.toFixed(2)} mm<br>Kit: <b>${total(pc).toLocaleString()}</b> loose pieces incl. ${S.kitSpare}% spare`;
+  if (K.wall < 0.8) h += `<br>⚠ Walls under 0.8 mm print poorly — raise Gap to ≥ ${(S.kitClear + 0.8).toFixed(1)} mm.`;
+  if (K.limited) h += `<br>⚠ Pocket shrunk to keep a 0.4 mm wall; pieces may not fit.`;
+  if (S.stagger && (d.W > S.kitBed || d.H > S.kitBed)) h += `<br>⚠ Honeycomb boards can't be split — bigger than the bed.`;
+  if (S.kitPieceH <= S.kitDepth) h += `<br>⚠ Pieces are no taller than the pocket — they'll be hard to see and remove.`;
+  return h;
+}
+
+function exportKit(full) {
+  const tiles = kitTiles(), pc = kitPieceCounts(), K = kitGeom();
+  toast('info', full ? 'Building kit' : 'Building base plate', `${GRID.cols}×${GRID.rows} pockets…`);
+  setTimeout(() => {
+    try {
+      const files = [], multi = tiles.length > 1;
+      tiles.forEach(t => {
+        const b = buildBoardTile(t), dir = multi ? `plate_r${t.ty + 1}c${t.tx + 1}/` : '';
+        files.push({ name: (full ? 'board/' : '') + dir + (multi ? `plate_r${t.ty + 1}c${t.tx + 1}.stl` : 'base_plate.stl'), data: b.plate.stl() });
+        if (full) b.guides.forEach((g, j) => { if (g) files.push({ name: `board/${dir}guide_${String(j + 1).padStart(2, '0')}_${symName(j)}_${hex(GRID.palette[j]).slice(1)}.stl`, data: g.stl() }); });
+      });
+      if (!full && files.length === 1) {
+        download(new Blob([files[0].data], { type: 'model/stl' }), baseName() + '_base_plate.stl');
+        return toast('ok', 'Base plate ready', `${(files[0].data.length / 1e6).toFixed(1)} MB STL`);
+      }
+      if (full) {
+        GRID.palette.forEach((p, j) => {
+          if (!pc[j]) return; const sheets = buildPieces(pc[j]);
+          sheets.forEach((m, k) => files.push({ name: `pieces/${String(j + 1).padStart(2, '0')}_${symName(j)}_${hex(p).slice(1)}_x${pc[j]}${sheets.length > 1 ? `_sheet${k + 1}of${sheets.length}` : ''}.stl`, data: m.stl() }));
+        });
+        const P = clamp(Math.floor(7000 / Math.max(GRID.cols, GRID.rows)), 10, 28), gut = 36, W = gut * 2 + GRID.cols * P, c = document.createElement('canvas');
+        c.width = W; c.height = gut * 2 + GRID.rows * P + legendHeight(W - gut * 2) + 10; drawChart(c.getContext('2d'), P, gut, true);
+        const png = atob(c.toDataURL('image/png').split(',')[1]), bytes = new Uint8Array(png.length); for (let i = 0; i < png.length; i++) bytes[i] = png.charCodeAt(i);
+        files.push({ name: 'chart.png', data: bytes });
+      }
+      const cnt = counts();
+      files.push({ name: 'README.txt', data: new TextEncoder().encode([
+        'MIXELPIXEL — DIY board kit', '',
+        `Grid ${GRID.cols} x ${GRID.rows}, ${S.shape} pieces ${S.sizeMm} mm, pitch ${K.p.toFixed(2)} mm`,
+        `Plate: floor ${K.F} mm${K.G ? ` + ${K.G} mm color guide` : ''} + ${S.kitDepth} mm pockets = ${K.H.toFixed(1)} mm tall; pockets ${K.pocket.toFixed(2)} mm (${S.kitClear} mm clearance)`,
+        tiles.length > 1 ? `Split into ${tiles.length} plates (${tiles[0].nx} across × ${tiles[0].ny} down) that butt together edge to edge.` : '', '',
+        'PRINTING THE BOARD',
+        full && K.G ? '1. In each board folder, drag plate + all guide_*.stl files into the slicer together → "single object with multiple parts" = YES.\n2. Plate = one filament; each guide_ file = its color. Guides mark which color goes in each pocket.' : '1. Print the plate STL in one color. Use chart.png to know which color goes where.',
+        full ? '\nPRINTING THE PIECES\nEach pieces/ file is one color; print each in its filament. Counts include spares.' : '', '',
+        'COLORS  (symbol, hex, pockets, pieces in kit)', ...GRID.palette.map((p, j) => `${String(j + 1).padStart(2, '0')}  ${symOf(j)}  ${hex(p)}  ${cnt[j]}  ${pc[j]}`), '',
+      ].join('\r\n')) });
+      download(zip(files), baseName() + (full ? '_diy_kit.zip' : '_base_plates.zip'));
+      toast('ok', full ? 'Kit ready' : 'Base plates ready', `${files.length} files · ${(files.reduce((a, f) => a + f.data.length, 0) / 1e6).toFixed(1)} MB`);
+    } catch (e) { console.error(e); toast('err', 'Kit export failed', e.message); }
+  }, 30);
+}
 
 /* ---------- minimal ZIP (store, no compression) ---------- */
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
