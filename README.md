@@ -4,6 +4,7 @@ Turn any image into a dot / pixel pattern you can 3D print, cross stitch, or use
 
 **Live:** https://mixelorg-arch.github.io/mixelpixel/
 
+- **Cartoonize first** (on by default): edge-preserving Kuwahara smoothing scaled to the grid, color pop, most-common-color sampling per cell, and one-cell ink outlines on light/dark borders, so photos stay readable as pixels
 - 10 piece shapes: circle, square, rounded, diamond, hexagon, octagon, triangle, star, heart, plus
 - Grid size (columns × rows, or fit to a width in mm), shape size and gap in mm, honeycomb stagger
 - Color count 2–48 (auto k-means in Lab space), grayscale, or **My filaments** — map to the exact colors you own

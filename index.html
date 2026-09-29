@@ -43,6 +43,15 @@
         <button class="btn outline sm" id="sampleBtn" type="button">TRY SAMPLE</button>
         <button class="btn outline sm" id="clearBtn" type="button">CLEAR</button>
       </div>
+      <div class="cartoon">
+        <label class="check big"><input type="checkbox" data-k="cartoon"><span class="box"></span> CARTOONIZE FIRST <small>flat colors + outlines, reads better as pixels</small></label>
+        <div class="cartoon-opts">
+          <div class="field"><label for="cartoonSmooth">Smoothing <output data-for="cartoonSmooth"></output></label><input type="range" id="cartoonSmooth" data-k="cartoonSmooth" min="0" max="100" step="1"></div>
+          <div class="field"><label for="outlineAmt">Outlines <output data-for="outlineAmt"></output></label><input type="range" id="outlineAmt" data-k="outlineAmt" min="0" max="100" step="1"></div>
+          <div class="field"><label for="colorPop">Color pop <output data-for="colorPop"></output></label><input type="range" id="colorPop" data-k="colorPop" min="0" max="100" step="1"></div>
+          <div class="field"><label for="outlineColor">Outline color</label><input type="color" id="outlineColor" data-k="outlineColor"></div>
+        </div>
+      </div>
       <details class="more">
         <summary>ADJUST IMAGE</summary>
         <div class="field"><label for="brightness">Brightness <output data-for="brightness"></output></label><input type="range" id="brightness" data-k="brightness" min="-100" max="100" step="1"></div>
@@ -178,7 +187,7 @@
           <button role="tab" type="button" data-view="preview">PREVIEW</button>
           <button role="tab" type="button" data-view="chart">CHART</button>
           <button role="tab" type="button" data-view="board">BOARD</button>
-          <button role="tab" type="button" data-view="original">ORIGINAL</button>
+          <button role="tab" type="button" data-view="original">SOURCE</button>
         </div>
         <div class="tools" role="toolbar" aria-label="Tools">
           <button class="tool" type="button" data-tool="view" title="Inspect (hover)" aria-label="Inspect"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/></svg></button>

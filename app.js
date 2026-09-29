@@ -14,6 +14,7 @@ const DEFAULTS = {
   shape: 'circle', sizeMm: 2.5, gapMm: 0.3, stagger: false,
   paletteMode: 'auto', nColors: 12, dither: false, minCount: 0,
   customPalette: '#000000 Black\n#FFFFFF White\n#FF0000 Red\n#FFD700 Yellow\n#00C2CB Teal\n#FF00FF Magenta\n#1E3A8A Navy\n#16A34A Green\n#8B4513 Brown\n#9CA3AF Grey',
+  cartoon: true, cartoonSmooth: 55, outlineAmt: 45, outlineColor: '#1A1A1A', colorPop: 35,
   brightness: 0, contrast: 0, saturation: 0, knockout: false, knockTol: 14,
   includeBase: true, baseMm: 1.2, heightMm: 1.0, marginMm: 3, plateColor: '#F5F5DC',
   kitHole: 'through', kitThick: 1.6, kitPieceMode: 'exact',
@@ -24,7 +25,8 @@ const DEFAULTS = {
 };
 // Settings that change the quantized grid (everything else is render-only)
 const COMPUTE_KEYS = new Set(['cols', 'rows', 'lockAspect', 'paletteMode', 'nColors', 'dither', 'minCount',
-  'customPalette', 'brightness', 'contrast', 'saturation', 'knockout', 'knockTol']);
+  'customPalette', 'brightness', 'contrast', 'saturation', 'knockout', 'knockTol',
+  'cartoon', 'cartoonSmooth', 'outlineAmt', 'outlineColor', 'colorPop']);
 
 const S = Object.assign({}, DEFAULTS);
 try {
@@ -36,6 +38,7 @@ S.tool = 'view'; S.zoom = 1;
 const save = () => { try { const { tool, zoom, ...keep } = S; localStorage.setItem('mixelpixel.settings', JSON.stringify(keep)); } catch (e) {} };
 
 let IMG = null;        // HTMLImageElement / canvas source
+let IMGID = 0;         // bumps on every new image, keys the cartoon cache
 let GRID = null;       // { cols, rows, idx:Int16Array (-1 = empty), palette:[{r,g,b}] }
 let selected = 0;      // palette index used by the paint tool
 
@@ -63,7 +66,10 @@ function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = 
 
 /* ================= sampling ================= */
 // Area-average the image onto cols×rows. Unlocked aspect = centre crop to fill.
-function sample(img, cols, rows, lock) {
+// dominant: take the most common colour in each cell instead of the mean, so the flat
+// regions of a cartoon stay crisp instead of blending into muddy in-between shades.
+const BUCKET = new Uint16Array(4096);
+function sample(img, cols, rows, lock, dominant) {
   const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
   let sx = 0, sy = 0, sw = iw, sh = ih;
   if (!lock) {
@@ -86,8 +92,102 @@ function sample(img, cols, rows, lock) {
     const o = (r * cols + q) * 4, n = k * k;
     if (A > 0) { out[o] = R / A; out[o + 1] = G / A; out[o + 2] = B / A; }
     out[o + 3] = A / n;
+    if (dominant && n > 1 && A > 0) {
+      let bk = -1, bc = 0; const keys = [];
+      for (let yy = 0; yy < k; yy++) for (let xx = 0; xx < k; xx++) {
+        const i = ((r * k + yy) * c.width + q * k + xx) * 4; if (d[i + 3] < 128) continue;
+        const key = (d[i] >> 4) << 8 | (d[i + 1] >> 4) << 4 | d[i + 2] >> 4; keys.push(key, i);
+        if (++BUCKET[key] > bc) { bc = BUCKET[key]; bk = key; }
+      }
+      let r2 = 0, g2 = 0, b2 = 0, m = 0;
+      for (let t = 0; t < keys.length; t += 2) { BUCKET[keys[t]] = 0; if (keys[t] === bk) { const i = keys[t + 1]; r2 += d[i]; g2 += d[i + 1]; b2 += d[i + 2]; m++; } }
+      if (m) { out[o] = r2 / m; out[o + 1] = g2 / m; out[o + 2] = b2 / m; }
+    }
   }
   return out;
+}
+
+/* ================= cartoonize =================
+   Kuwahara filter (edge-preserving: flattens texture into flat patches but keeps borders sharp),
+   scaled to the grid so it removes exactly the detail a cell can't show, then a colour pop.
+   Outlines are added later at grid level, one cell thick, so they survive pixelation. */
+let CART = { key: '', canvas: null };
+function kuwahara(d, W, H, r) {
+  const W1 = W + 1, N = W1 * (H + 1), sR = new Float64Array(N), sG = new Float64Array(N), sB = new Float64Array(N), sY = new Float64Array(N), sYY = new Float64Array(N);
+  for (let y = 0; y < H; y++) {
+    let a = 0, b = 0, c = 0, e = 0, f = 0;
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4, Y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      a += d[i]; b += d[i + 1]; c += d[i + 2]; e += Y; f += Y * Y;
+      const o = (y + 1) * W1 + x + 1, u = o - W1;
+      sR[o] = sR[u] + a; sG[o] = sG[u] + b; sB[o] = sB[u] + c; sY[o] = sY[u] + e; sYY[o] = sYY[u] + f;
+    }
+  }
+  const out = new Uint8ClampedArray(d.length);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let bv = Infinity, br = 0, bg = 0, bb = 0;
+    for (let q = 0; q < 4; q++) {
+      const x0 = q & 1 ? x : Math.max(0, x - r), x1 = q & 1 ? Math.min(W - 1, x + r) : x;
+      const y0 = q & 2 ? y : Math.max(0, y - r), y1 = q & 2 ? Math.min(H - 1, y + r) : y;
+      const A = y0 * W1 + x0, B = y0 * W1 + x1 + 1, C = (y1 + 1) * W1 + x0, D = (y1 + 1) * W1 + x1 + 1, n = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const m = (sY[D] - sY[B] - sY[C] + sY[A]) / n, v = (sYY[D] - sYY[B] - sYY[C] + sYY[A]) / n - m * m;
+      if (v < bv) { bv = v; br = (sR[D] - sR[B] - sR[C] + sR[A]) / n; bg = (sG[D] - sG[B] - sG[C] + sG[A]) / n; bb = (sB[D] - sB[B] - sB[C] + sB[A]) / n; }
+    }
+    const i = (y * W + x) * 4; out[i] = br; out[i + 1] = bg; out[i + 2] = bb; out[i + 3] = d[i + 3];
+  }
+  return out;
+}
+function cartoonSource() {
+  if (!S.cartoon || !IMG) return IMG;
+  const iw = IMG.naturalWidth || IMG.width, ih = IMG.naturalHeight || IMG.height;
+  const target = clamp(Math.ceil(Math.max(S.cols, S.rows) * 8 / 160) * 160, 320, 960), f = Math.min(1, target / Math.max(iw, ih));
+  const W = Math.max(1, Math.round(iw * f)), H = Math.max(1, Math.round(ih * f));
+  const key = [IMGID, W, H, S.cols, S.cartoonSmooth, S.colorPop].join('|');
+  if (CART.key === key) return CART.canvas;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(IMG, 0, 0, W, H);
+  const img = g.getImageData(0, 0, W, H);
+  let d = img.data;
+  const cell = W / S.cols, r = Math.max(1, Math.round(cell * (0.2 + S.cartoonSmooth / 100)));
+  if (S.cartoonSmooth > 0) { d = kuwahara(d, W, H, r); d = kuwahara(d, W, H, Math.max(1, r >> 1)); }
+  const sat = 1 + S.colorPop / 100 * 0.9, con = 1 + S.colorPop / 100 * 0.25;
+  for (let i = 0; i < d.length; i += 4) {
+    let R = (d[i] - 128) * con + 128, G = (d[i + 1] - 128) * con + 128, B = (d[i + 2] - 128) * con + 128;
+    const Y = 0.299 * R + 0.587 * G + 0.114 * B;
+    d[i] = Y + (R - Y) * sat; d[i + 1] = Y + (G - Y) * sat; d[i + 2] = Y + (B - Y) * sat;
+  }
+  img.data.set(d); g.putImageData(img, 0, 0);
+  CART = { key, canvas: c };
+  return c;
+}
+
+// Mark one-cell outlines on light/dark borders (how a cartoonist inks). The threshold is a
+// percentile of this image's own contrasts, so the slider means "how much gets inked" whether
+// the photo is punchy or flat. The darker cell of each pair takes the line; with knock-out on,
+// the subject's rim against the background is inked too.
+function outlineCells(px, cols, rows, mask) {
+  const n = cols * rows, L = new Float32Array(n), o = new Uint8Array(n), pairs = [];
+  for (let i = 0; i < n; i++) if (mask[i]) L[i] = lab(px[i * 4] | 0, px[i * 4 + 1] | 0, px[i * 4 + 2] | 0)[0];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c; if (!mask[i]) continue;
+    if (c + 1 < cols && mask[i + 1]) pairs.push(i, i + 1);
+    if (r + 1 < rows && mask[i + cols]) pairs.push(i, i + cols);
+    if (S.knockout) for (const [dc, dr] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      const cc = c + dc, rr = r + dr; if (cc >= 0 && rr >= 0 && cc < cols && rr < rows && !mask[rr * cols + cc]) o[i] = 1;
+    }
+  }
+  const d = new Float32Array(pairs.length / 2); for (let k = 0; k < d.length; k++) d[k] = Math.abs(L[pairs[2 * k]] - L[pairs[2 * k + 1]]);
+  const sorted = Float32Array.from(d).sort(), share = S.outlineAmt / 100 * 0.16;
+  const thr = Math.max(9, sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * (1 - share)))] || 0);
+  for (let k = 0; k < d.length; k++) if (d[k] >= thr) { const i = pairs[2 * k], j = pairs[2 * k + 1]; o[L[i] <= L[j] ? i : j] = 1; }
+  // drop specks: an outline cell with no outline neighbour is noise, not a line
+  const keep = o.slice();
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c; if (!o[i]) continue; let nb = 0;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { if (!dr && !dc) continue; const rr = r + dr, cc = c + dc; if (rr >= 0 && cc >= 0 && rr < rows && cc < cols && o[rr * cols + cc]) nb++; }
+    if (!nb) keep[i] = 0;
+  }
+  return keep;
 }
 
 function adjust(px, s) {
@@ -171,7 +271,7 @@ function mapToPalette(px, cols, rows, pal, mask, dither) {
 function compute() {
   if (!IMG) { GRID = null; return; }
   const cols = S.cols, rows = S.rows;
-  const px = sample(IMG, cols, rows, S.lockAspect);
+  const px = sample(cartoonSource(), cols, rows, S.lockAspect, S.cartoon);
   adjust(px, S);
   const n = cols * rows, mask = new Uint8Array(n);
   let bgL = null;
@@ -186,6 +286,10 @@ function compute() {
     mask[i] = 1;
   }
   if (S.paletteMode === 'gray') for (let i = 0; i < n * 4; i += 4) { const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]; px[i] = px[i + 1] = px[i + 2] = y; }
+  const oc = parseHex(S.outlineColor) || { r: 26, g: 26, b: 26 };
+  const outl = S.cartoon && S.outlineAmt > 0 ? outlineCells(px, cols, rows, mask) : null;
+  const nOut = outl ? outl.reduce((a, v) => a + v, 0) : 0;
+  if (nOut) for (let i = 0; i < n; i++) if (outl[i]) { px[i * 4] = oc.r; px[i * 4 + 1] = oc.g; px[i * 4 + 2] = oc.b; }
 
   let pal;
   if (S.paletteMode === 'custom') {
@@ -200,11 +304,14 @@ function compute() {
     }
   } else {
     const map = new Map();
-    for (let i = 0; i < n; i++) if (mask[i]) { const o = i * 4, key = (px[o] << 16) | (px[o + 1] << 8) | px[o + 2]; map.set(key, (map.get(key) || 0) + 1); }
+    for (let i = 0; i < n; i++) if (mask[i] && !(nOut && outl[i])) { const o = i * 4, key = (px[o] << 16) | (px[o + 1] << 8) | px[o + 2]; map.set(key, (map.get(key) || 0) + 1); }
     const pts = [...map].map(([key, w]) => { const r = key >> 16 & 255, g = key >> 8 & 255, b = key & 255; return { r, g, b, w, L: lab(r, g, b) }; });
-    pal = pts.length ? kmeans(pts, S.nColors) : [{ r: 0, g: 0, b: 0 }];
+    pal = pts.length ? kmeans(pts, Math.max(1, S.nColors - (nOut ? 1 : 0))) : [];
+    if (nOut) pal.push({ ...oc, name: 'Outline' });
+    if (!pal.length) pal = [{ r: 0, g: 0, b: 0 }];
   }
   let idx = mapToPalette(px, cols, rows, pal, mask, S.dither);
+  if (nOut) { const oj = nearestFn(pal)(oc.r, oc.g, oc.b); for (let i = 0; i < n; i++) if (outl[i]) idx[i] = oj; }
   GRID = { cols, rows, idx, palette: pal, px, mask };
   if (S.minCount > 0) mergeRare(S.minCount);
   sortPalette();
@@ -418,9 +525,9 @@ function render() {
   const availW = stage.clientWidth - 24, availH = stage.clientHeight - 24;
   let cssW, cssH;
   if (S.view === 'original') {
-    const iw = IMG.naturalWidth || IMG.width, ih = IMG.naturalHeight || IMG.height, f = Math.min(availW / iw, availH / ih) * S.zoom;
+    const src = cartoonSource(), iw = src.naturalWidth || src.width, ih = src.naturalHeight || src.height, f = Math.min(availW / iw, availH / ih) * S.zoom;
     cssW = iw * f; cssH = ih * f; setCanvas(cssW, cssH, dpr);
-    ctx.drawImage(IMG, 0, 0, cssW, cssH);
+    ctx.imageSmoothingQuality = 'high'; ctx.drawImage(src, 0, 0, cssW, cssH);
   } else if (GRID && S.view === 'chart') {
     const gut = 28, P0 = Math.min((availW - gut * 2) / GRID.cols, (availH - gut * 2) / GRID.rows);
     const P = clampP(P0 * S.zoom, GRID.cols + 2, GRID.rows + 2, dpr);
@@ -489,6 +596,7 @@ function syncControls() {
   $$('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === S.tool));
   $$('.shape').forEach(b => b.setAttribute('aria-checked', b.dataset.shape === S.shape));
   $('#customWrap').hidden = S.paletteMode !== 'custom';
+  $('.cartoon-opts').hidden = !S.cartoon;
   $$('[data-hole]').forEach(b => b.setAttribute('aria-selected', b.dataset.hole === S.kitHole));
   $$('[data-pmode]').forEach(b => b.setAttribute('aria-selected', b.dataset.pmode === S.kitPieceMode));
   $$('.pocket-only').forEach(el => el.hidden = S.kitHole === 'through');
@@ -630,7 +738,7 @@ function loadFile(f) {
   img.src = url;
 }
 function useImage(img, url, name) {
-  IMG = img; edited = false;
+  IMG = img; IMGID++; edited = false;
   $('#thumb').src = url; $('#thumb').hidden = false; $('#dropText').hidden = true;
   if (S.lockAspect) S.rows = clamp(Math.round(S.cols * aspect()), 4, 300);
   if (S.view === 'original') S.view = 'preview';
